@@ -3,7 +3,7 @@ import random
 import math
 import time
 
-WIDTH, HEIGHT = 800, 560
+WIDTH, HEIGHT = 900, 560
 FPS = 60
 BG = (30,35,25)
 
@@ -61,6 +61,10 @@ class Player:
         self.hp = 3
         self.invincible_until = 0
         self.invincibility_duration = 1000
+        self.max_ammo = 12
+        self.ammo = self.max_ammo
+        self.reload_duration = 2000
+        self.reloading_until = 0
 
     def move(self, keys, width, height):
         dx = dy = 0
@@ -72,9 +76,20 @@ class Player:
         self.rect.y = max(0, min(height-self.rect.height, self.rect.y+dy))
         if self.shoot_cooldown > 0:
             self.shoot_cooldown -= 1
+            
+        self.update_reload()
 
     def shoot(self, target_pos):
-        if self.shoot_cooldown > 0: return
+        if self.is_reloading():
+            return
+
+        if self.ammo <= 0:
+            self.start_reload()
+            return
+
+        if self.shoot_cooldown > 0:
+            return
+
         cx, cy = self.rect.center
         tx, ty = target_pos
         dx, dy = tx-cx, ty-cy
@@ -84,6 +99,12 @@ class Player:
         self.bullets.append(pygame.Rect(cx-4, cy-4, 8, 8))
         self.bullets.append([cx-4, cy-4, vx, vy])
         self.bullets.pop(-2)
+
+        self.ammo -= 1
+
+        if self.ammo == 0:
+            self.start_reload()
+
         self.shoot_cooldown = 15
 
     def take_damage(self):
@@ -98,7 +119,20 @@ class Player:
         return True
 
     def is_invincible(self):
-        return pygame.time.get_ticks() < self.invincible_until    
+        return pygame.time.get_ticks() < self.invincible_until
+
+    def start_reload(self):
+        if self.ammo < self.max_ammo and self.reloading_until == 0:
+            self.reloading_until = pygame.time.get_ticks() + self.reload_duration
+
+    def update_reload(self):
+        if self.reloading_until > 0:
+            if pygame.time.get_ticks() >= self.reloading_until:
+                self.ammo = self.max_ammo
+                self.reloading_until = 0
+
+    def is_reloading(self):
+        return self.reloading_until > 0    
 
     def update_bullets(self, width, height):
         live = []
@@ -125,6 +159,7 @@ class GameEngine:
         pygame.display.set_caption("Zombie Escape")
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont("monospace", 24)
+        self.hud_font = pygame.font.SysFont("monospace", 16)
         self.big_font = pygame.font.SysFont("monospace", 44, bold=True)
         self.reset()
 
@@ -192,8 +227,8 @@ class GameEngine:
         self.player.draw(self.screen)
         hud_bg = pygame.Rect(0, 0, WIDTH, 40)
         pygame.draw.rect(self.screen, (15,20,15), hud_bg)
-        hud = self.font.render(
-            f"HP: {self.player.hp}  |  Wave: {self.wave}  Score: {self.score}  Kills: {self.kills}/{self.kills_to_next} |  WASD Move, Click Shoot, R Restart",
+        hud = self.hud_font.render(
+            f"HP: {self.player.hp} | Ammo: {self.player.ammo}/{self.player.max_ammo} | Wave: {self.wave} Score: {self.score} Kills: {self.kills}/{self.kills_to_next}  |  WASD Move, Click Shoot, R Restart",
             True, (160,220,120))
         self.screen.blit(hud, (8, 8))
         if self.game_over:
