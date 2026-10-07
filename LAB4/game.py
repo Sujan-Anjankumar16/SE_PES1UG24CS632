@@ -7,6 +7,7 @@ WIDTH, HEIGHT = 900, 560
 FPS = 60
 BG = (30,35,25)
 
+
 class ExplosiveBarrel:
     def __init__(self, x, y):
         self.rect = pygame.Rect(x, y, 24, 32)
@@ -22,6 +23,8 @@ class Zombie:
 
     def __init__(self, x, y):
         self.rect = pygame.Rect(x, y, 30, 30)
+        self.pos_x = float(x)
+        self.pos_y = float(y)
         self.color = (60,140,60)
         self.hp = 3
         self.wobble = random.uniform(0, 6.28)
@@ -33,8 +36,10 @@ class Zombie:
         dx, dy = px-cx, py-cy
         dist = (dx**2+dy**2)**0.5
         if dist:
-            self.rect.x += int(dx/dist*self.SPEED)
-            self.rect.y += int(dy/dist*self.SPEED)
+            self.pos_x += dx/dist*self.SPEED
+            self.pos_y += dy/dist*self.SPEED
+            self.rect.x = int(self.pos_x)
+            self.rect.y = int(self.pos_y)
         self.frame += 1
 
     def hit(self):
@@ -49,13 +54,58 @@ class Zombie:
             pygame.draw.circle(screen, (200,40,40), (ex, draw_rect.y+10), 4)
 
 
-def spawn_zombie(width, height, player_rect, margin=120):
+class FastZombie(Zombie):
+    SPEED = 2.5
+
+    def __init__(self, x, y):
+        super().__init__(x, y)
+        self.rect = pygame.Rect(x, y, 20, 20)
+        self.pos_x = float(x)
+        self.pos_y = float(y)
+        self.color = (220,180,40)
+        self.hp = 1
+
+
+class TankZombie(Zombie):
+    SPEED = 0.8
+
+    def __init__(self, x, y):
+        super().__init__(x, y)
+        self.rect = pygame.Rect(x, y, 45, 45)
+        self.pos_x = float(x)
+        self.pos_y = float(y)
+        self.color = (120,60,160)
+        self.hp = 6
+
+
+def spawn_zombie(width, height, player_rect, margin=120, zombie_class=None):
     while True:
-        x = random.randint(0, width-30)
-        y = random.randint(0, height-30)
-        rect = pygame.Rect(x, y, 30, 30)
+        if zombie_class == FastZombie:
+            zombie_size = 20
+        elif zombie_class == TankZombie:
+            zombie_size = 45
+        else:
+            zombie_size = 30
+
+        if zombie_class is None:
+            zombie_type = random.random()
+
+            if zombie_type < 0.20:
+                zombie_class = FastZombie
+                zombie_size = 20
+            elif zombie_type < 0.35:
+                zombie_class = TankZombie
+                zombie_size = 45
+            else:
+                zombie_class = Zombie
+                zombie_size = 30
+
+        x = random.randint(0, width-zombie_size)
+        y = random.randint(0, height-zombie_size)
+        rect = pygame.Rect(x, y, zombie_size, zombie_size)
+
         if not rect.colliderect(player_rect.inflate(margin, margin)):
-            return Zombie(x, y)
+            return zombie_class(x, y)
 
 
 SPEED = 4
@@ -85,7 +135,7 @@ class Player:
         self.rect.y = max(0, min(height-self.rect.height, self.rect.y+dy))
         if self.shoot_cooldown > 0:
             self.shoot_cooldown -= 1
-            
+
         self.update_reload()
 
     def shoot(self, target_pos):
@@ -174,17 +224,29 @@ class GameEngine:
 
     def reset(self):
         self.player = Player(WIDTH//2, HEIGHT//2)
-        self.zombies = [spawn_zombie(WIDTH, HEIGHT, self.player.rect) for _ in range(4)]
+
+        self.wave = 1
+        self.kills = 0
+        self.kills_to_next = 8
+
+        self.zombies = [
+            spawn_zombie(WIDTH, HEIGHT, self.player.rect, zombie_class=FastZombie),
+            spawn_zombie(WIDTH, HEIGHT, self.player.rect, zombie_class=TankZombie)
+        ]
+
+        for _ in range(self.kills_to_next - 2):
+            self.zombies.append(
+                spawn_zombie(WIDTH, HEIGHT, self.player.rect)
+            )
+
         self.barrels = [
             ExplosiveBarrel(100, 100),
             ExplosiveBarrel(300, 200),
             ExplosiveBarrel(600, 150),
             ExplosiveBarrel(700, 400)
         ]
+
         self.score = 0
-        self.wave = 1
-        self.kills = 0
-        self.kills_to_next = 8
         self.game_over = False
         self.start_time = time.time()
 
@@ -209,6 +271,7 @@ class GameEngine:
                 if self.player.take_damage():
                     if self.player.hp <= 0:
                         self.game_over = True
+
         dead = []
         exploded_barrels = []
 
@@ -232,7 +295,7 @@ class GameEngine:
 
                     if b in self.player.bullets:
                         self.player.bullets.remove(b)
-        
+
         for z in dead:
             if z in self.zombies:
                 self.zombies.remove(z)
@@ -253,14 +316,42 @@ class GameEngine:
                         self.kills += 1
                         self.score += 10
 
-            self.barrels.remove(barrel)        
+                self.barrels.remove(barrel)        
 
         if self.kills >= self.kills_to_next:
             self.kills = 0
             self.wave += 1
             self.kills_to_next = 8 + self.wave * 2
-            for _ in range(self.wave + 3):
-                self.zombies.append(spawn_zombie(WIDTH, HEIGHT, self.player.rect))
+
+            self.barrels = [
+                ExplosiveBarrel(100, 100),
+                ExplosiveBarrel(300, 200),
+                ExplosiveBarrel(600, 150),
+                ExplosiveBarrel(700, 400)
+            ]   
+
+            self.zombies.append(
+                spawn_zombie(
+                WIDTH,
+                HEIGHT,
+                self.player.rect,
+                zombie_class=FastZombie
+            )
+        )
+
+            self.zombies.append(
+                spawn_zombie(
+                    WIDTH,
+                    HEIGHT,
+                    self.player.rect,
+                    zombie_class=TankZombie
+            )
+        )
+
+            for _ in range(self.kills_to_next - 2):
+                self.zombies.append(
+                     spawn_zombie(WIDTH, HEIGHT, self.player.rect)
+                )
 
     def draw(self):
         self.screen.fill(BG)
