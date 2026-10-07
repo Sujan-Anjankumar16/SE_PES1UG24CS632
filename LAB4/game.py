@@ -58,6 +58,9 @@ class Player:
         self.color = (60,160,220)
         self.bullets = []
         self.shoot_cooldown = 0
+        self.hp = 3
+        self.invincible_until = 0
+        self.invincibility_duration = 1000
 
     def move(self, keys, width, height):
         dx = dy = 0
@@ -83,6 +86,20 @@ class Player:
         self.bullets.pop(-2)
         self.shoot_cooldown = 15
 
+    def take_damage(self):
+        current_time = pygame.time.get_ticks()
+
+        if current_time < self.invincible_until:
+            return False
+
+        self.hp -= 1
+        self.invincible_until = current_time + self.invincibility_duration
+
+        return True
+
+    def is_invincible(self):
+        return pygame.time.get_ticks() < self.invincible_until    
+
     def update_bullets(self, width, height):
         live = []
         for b in self.bullets:
@@ -92,7 +109,11 @@ class Player:
         self.bullets = live
 
     def draw(self, screen):
-        pygame.draw.rect(screen, self.color, self.rect, border_radius=6)
+        if self.is_invincible():
+            if (pygame.time.get_ticks() // 100) % 2 == 0:
+                pygame.draw.rect(screen, self.color, self.rect, border_radius=6)
+        else:
+            pygame.draw.rect(screen, self.color, self.rect, border_radius=6)
         for b in self.bullets:
             pygame.draw.circle(screen, (255,220,60), (int(b[0]), int(b[1])), 5)
 
@@ -135,7 +156,9 @@ class GameEngine:
         for z in self.zombies:
             z.update(self.player.rect.center)
             if z.rect.colliderect(self.player.rect):
-                self.game_over = True
+                if self.player.take_damage():
+                    if self.player.hp <= 0:
+                        self.game_over = True
 
         dead = []
         for z in self.zombies:
@@ -170,7 +193,7 @@ class GameEngine:
         hud_bg = pygame.Rect(0, 0, WIDTH, 40)
         pygame.draw.rect(self.screen, (15,20,15), hud_bg)
         hud = self.font.render(
-            f"Wave: {self.wave}  Score: {self.score}  Kills: {self.kills}/{self.kills_to_next}  |  WASD Move, Click Shoot, R Restart",
+            f"HP: {self.player.hp}  |  Wave: {self.wave}  Score: {self.score}  Kills: {self.kills}/{self.kills_to_next} |  WASD Move, Click Shoot, R Restart",
             True, (160,220,120))
         self.screen.blit(hud, (8, 8))
         if self.game_over:
